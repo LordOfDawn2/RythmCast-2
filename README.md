@@ -75,7 +75,7 @@ docker compose up --build
 | `API1_DATABASE_URL` | PostgreSQL URL for API 1 | `postgresql://api1_user:api1_password@db1:5432/rythmcast_users` |
 | `API2_PORT` | API 2 service port | `5002` |
 | `API2_DATABASE_URL` | PostgreSQL URL for API 2 | `postgresql://api2_user:api2_password@db2:5432/rythmcast_spotify` |
-| `DOCKERHUB_USERNAME` | Docker Hub namespace for CI push | `your-name` |
+| `DOCKERHUB_USERNAME` | Docker Hub namespace for CI push | `iam2` |
 
 ## Demo
 - Click **Se connecter avec Spotify** on the frontend.
