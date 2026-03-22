@@ -1,0 +1,161 @@
+services:
+  gateway:
+    image: nginx:1.27.4-alpine
+    container_name: rythmcast-gateway
+    ports:
+      - "3000:80"
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+      api1:
+        condition: service_healthy
+      api2:
+        condition: service_healthy
+      api2-replica:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: rythmcast-frontend
+    environment:
+      PORT: 3000
+      API1_URL: http://api1:5001
+      API2_URL: http://api2:5002
+    volumes:
+      - ./frontend/src:/app/src
+    depends_on:
+      api1:
+        condition: service_healthy
+      api2:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  api1:
+    build:
+      context: ./api1
+    container_name: rythmcast-api1
+    environment:
+      PORT: 5001
+      DATABASE_URL: postgresql://api1_user:api1_password@db1:5432/rythmcast_users
+      JWT_SECRET: ${JWT_SECRET:-your_jwt_secret_key_here}
+    ports:
+      - "5001:5001"
+    depends_on:
+      db1:
+        condition: service_healthy
+    networks:
+      - app-network
+      - api1-db-network
+
+  api2:
+    build:
+      context: ./api2
+    container_name: rythmcast-api2
+    environment:
+      PORT: 5002
+      DATABASE_URL: postgresql://api2_user:api2_password@db2:5432/rythmcast_spotify
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your_jwt_secret_key_here}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI:-http://127.0.0.1:3000/api/spotify/callback}
+    depends_on:
+      db2:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+      - api2-db-network
+
+  api2-replica:
+    build:
+      context: ./api2
+    container_name: rythmcast-api2-replica
+    environment:
+      PORT: 5002
+      DATABASE_URL: postgresql://api2_user:api2_password@db2:5432/rythmcast_spotify
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your_jwt_secret_key_here}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI:-http://127.0.0.1:3000/api/spotify/callback}
+    depends_on:
+      db2:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+      - api2-db-network
+
+  db1:
+    image: postgres:16.4-alpine3.20
+    container_name: rythmcast-db1
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rythmcast_users
+      POSTGRES_USER: api1_user
+      POSTGRES_PASSWORD: api1_password
+    volumes:
+      - api1-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U api1_user -d rythmcast_users"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - api1-db-network
+
+  db2:
+    image: postgres:16.4-alpine3.20
+    container_name: rythmcast-db2
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rythmcast_spotify
+      POSTGRES_USER: api2_user
+      POSTGRES_PASSWORD: api2_password
+    volumes:
+      - api2-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U api2_user -d rythmcast_spotify"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - api2-db-network
+
+  redis:
+    image: redis:7.4.2-alpine
+    container_name: rythmcast-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+networks:
+  app-network:
+  api1-db-network:
+  api2-db-network:
+
+volumes:
+  api1-db-data:
+  api2-db-data:
+  redis-data:
