@@ -19,16 +19,24 @@ app.get('/health', (_req, res) => {
 });
 
 const PORT = process.env.PORT || 5002;
+const INIT_DB = process.env.INIT_DB !== 'false';
 
-initDb()
-  .then(async () => {
-    await connectQueue();
-    console.log('API2 PostgreSQL connected');
-    app.listen(PORT, () => {
-      console.log(`API2 running on port ${PORT}`);
-    });
-  })
-  .catch((error) => {
-    console.error('API2 PostgreSQL connection error:', error.message);
-    process.exit(1);
+const startServer = async () => {
+  await connectQueue();
+  console.log('API2 PostgreSQL connected');
+  app.listen(PORT, () => {
+    console.log(`API2 running on port ${PORT}`);
   });
+};
+
+const bootstrap = async () => {
+  if (INIT_DB) {
+    await initDb();
+  }
+  await startServer();
+};
+
+bootstrap().catch((error) => {
+  console.error('API2 PostgreSQL connection error:', error.message);
+  process.exit(1);
+});
