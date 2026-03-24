@@ -229,6 +229,7 @@
                             </div>
 
                             <button class="auto-detect-btn" onclick="autoDetect()">Détection automatique</button>
+                            <div id="autoDetectStatus" style="margin-top: 8px; font-size: 0.85em; color: #b3b3b3;"></div>
                         </div>
                         
                         <button class="generate-btn" id="smartGenerateBtn" onclick="generateSmartPlaylist()">Générer la Playlist</button>
@@ -527,6 +528,38 @@
             document.getElementById('speedDisplay').textContent = value + ' km/h';
         }
 
+        function setAutoDetectStatus(message, type = 'info') {
+            const status = document.getElementById('autoDetectStatus');
+            if (!status) return;
+
+            if (type === 'error') {
+                status.style.color = '#ff6b6b';
+            } else if (type === 'success') {
+                status.style.color = '#1DB954';
+            } else {
+                status.style.color = '#b3b3b3';
+            }
+
+            status.textContent = message;
+        }
+
+        function mapWeatherCodeToCondition(weatherCode) {
+            if (weatherCode === 0 || weatherCode === 1) return 'clear';
+            if (weatherCode === 2 || weatherCode === 3) return 'clouds';
+            if (weatherCode >= 51 && weatherCode <= 57) return 'drizzle';
+            if (weatherCode >= 61 && weatherCode <= 67) return 'rain';
+            if (weatherCode >= 71 && weatherCode <= 77) return 'snow';
+            if (weatherCode >= 80 && weatherCode <= 99) return 'thunderstorm';
+            return 'clouds';
+        }
+
+        function fallbackWeatherByTime(timeValue) {
+            const hour = Number.parseInt(String(timeValue || '').split(':')[0], 10);
+            if (Number.isNaN(hour)) return 'clouds';
+            if (hour >= 6 && hour < 18) return 'clear';
+            return 'clouds';
+        }
+
         async function autoDetect() {
             const btn = event.target;
             btn.disabled = true;
@@ -537,6 +570,7 @@
                 const now = new Date();
                 const timeString = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
                 document.getElementById('timeInput').value = timeString;
+                setAutoDetectStatus('Heure mise à jour, détection météo en cours...');
 
                 // Try to get location and weather
                 if (navigator.geolocation) {
@@ -546,36 +580,32 @@
 
                         try {
                             // Use Open-Meteo API (free, no API key needed)
-                            const weatherResponse = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&temperature_unit=celsius`);
+                            const weatherResponse = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&current=temperature_2m,weather_code&temperature_unit=celsius`);
                             
                             if (weatherResponse.ok) {
                                 const weatherData = await weatherResponse.json();
-                                const temp = weatherData.current_weather.temperature;
-                                const weatherCode = weatherData.current_weather.weathercode;
+                                const weatherBlock = weatherData.current_weather || weatherData.current || null;
+                                const temp = weatherBlock?.temperature ?? weatherBlock?.temperature_2m;
+                                const weatherCode = weatherBlock?.weathercode ?? weatherBlock?.weather_code;
+
+                                if (typeof temp !== 'number' || typeof weatherCode !== 'number') {
+                                    throw new Error('Weather payload incomplete');
+                                }
 
                                 document.getElementById('tempInput').value = Math.round(temp);
-                                
-                                // Map WMO weather codes to our options
-                                let weatherCondition = 'clear';
-                                if (weatherCode === 0 || weatherCode === 1) weatherCondition = 'clear';
-                                else if (weatherCode === 2 || weatherCode === 3) weatherCondition = 'clouds';
-                                else if (weatherCode >= 51 && weatherCode <= 57) weatherCondition = 'drizzle';
-                                else if (weatherCode >= 61 && weatherCode <= 67) weatherCondition = 'rain';
-                                else if (weatherCode >= 71 && weatherCode <= 77) weatherCondition = 'snow';
-                                else if (weatherCode >= 80 && weatherCode <= 99) weatherCondition = 'thunderstorm';
-                                
-                                document.getElementById('weatherSelect').value = weatherCondition;
+                                document.getElementById('weatherSelect').value = mapWeatherCodeToCondition(weatherCode);
                                 
                                 btn.textContent = '✓ Détecté !';
+                                setAutoDetectStatus('Météo détectée automatiquement.', 'success');
                             } else {
                                 throw new Error('Weather API failed');
                             }
                         } catch (error) {
                             console.error('Weather detection failed:', error);
-                            btn.textContent = '✓ Heure mise à jour';
-                            // Set reasonable defaults
-                            document.getElementById('tempInput').value = 20;
-                            document.getElementById('weatherSelect').value = 'clear';
+                            btn.textContent = '✓ Heure détectée';
+                            const fallbackWeather = fallbackWeatherByTime(timeString);
+                            document.getElementById('weatherSelect').value = fallbackWeather;
+                            setAutoDetectStatus('Météo indisponible: fallback appliqué (heure uniquement).', 'error');
                         }
 
                         setTimeout(() => {
@@ -584,14 +614,20 @@
                         }, 2000);
                     }, (error) => {
                         console.error('Geolocation error:', error);
-                        btn.textContent = '✓ Heure mise à jour';
+                        btn.textContent = '✓ Heure détectée';
+                        const fallbackWeather = fallbackWeatherByTime(timeString);
+                        document.getElementById('weatherSelect').value = fallbackWeather;
+                        setAutoDetectStatus('Autorise la géolocalisation pour détecter la météo en direct.', 'error');
                         setTimeout(() => {
                             btn.textContent = '📍 Détecter automatiquement';
                             btn.disabled = false;
                         }, 2000);
                     });
                 } else {
-                    btn.textContent = '✓ Heure mise à jour';
+                    btn.textContent = '✓ Heure détectée';
+                    const fallbackWeather = fallbackWeatherByTime(timeString);
+                    document.getElementById('weatherSelect').value = fallbackWeather;
+                    setAutoDetectStatus('Géolocalisation non supportée: fallback météo appliqué.', 'error');
                     setTimeout(() => {
                         btn.textContent = '📍 Détecter automatiquement';
                         btn.disabled = false;
@@ -599,7 +635,8 @@
                 }
             } catch (error) {
                 console.error('Auto-detect error:', error);
-                btn.textContent = '✓ Heure mise à jour';
+                btn.textContent = '✓ Heure détectée';
+                setAutoDetectStatus('Détection incomplète: heure mise à jour seulement.', 'error');
                 setTimeout(() => {
                     btn.textContent = '📍 Détecter automatiquement';
                     btn.disabled = false;

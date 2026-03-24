@@ -214,6 +214,7 @@ router.get('/login', (req, res) => {
     client_id: SPOTIFY_CLIENT_ID,
     response_type: 'code',
     redirect_uri: SPOTIFY_REDIRECT_URI,
+    show_dialog: true,
     scope: LOGIN_SCOPES.join(' '),
     state: Math.random().toString(36).slice(2)
   })}`;
